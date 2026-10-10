@@ -263,13 +263,19 @@ async function initCloud(){
 }
 $('#login').onclick=async()=>{
   if(!auth){$('#msg').textContent='Connexion internet requise pour se connecter.';return}
-  const p=new firebase.auth.GoogleAuthProvider();
-  try{await auth.signInWithPopup(p)}
-  catch(e){
-    if(e.code==='auth/popup-blocked'||e.code==='auth/operation-not-supported-in-this-environment'){try{await auth.signInWithRedirect(p)}catch(x){}}
-    else if(e.code==='auth/unauthorized-domain')$('#msg').textContent='Domaine non autorisé : ajoute marckalenga117-max.github.io dans Firebase (Authentication, Paramètres).';
-    else if(e.code==='auth/operation-not-allowed')$('#msg').textContent='La connexion Google n’est pas activée dans Firebase.';
-    else if(e.code!=='auth/popup-closed-by-user'&&e.code!=='auth/cancelled-popup-request')$('#msg').textContent='Connexion impossible ('+(e.code||'erreur')+').';
+  $('#msg').textContent='Ouverture de la fenêtre Google…';
+  try{
+    const p=new firebase.auth.GoogleAuthProvider();
+    p.setCustomParameters({prompt:'select_account'});
+    await auth.signInWithPopup(p);
+    $('#msg').textContent='';
+  }catch(e){
+    const c=e&&e.code||'';
+    if(c==='auth/unauthorized-domain')$('#msg').textContent='Domaine non autorisé : ajoute marckalenga117-max.github.io dans Firebase (Authentication, Paramètres).';
+    else if(c==='auth/operation-not-allowed')$('#msg').textContent='La connexion Google n’est pas activée dans Firebase.';
+    else if(c==='auth/popup-blocked')$('#msg').textContent='La fenêtre a été bloquée. Autorise les fenêtres surgissantes, ou ouvre le site dans Chrome.';
+    else if(c==='auth/popup-closed-by-user'||c==='auth/cancelled-popup-request')$('#msg').textContent='Connexion annulée. Si la fenêtre se ferme toute seule, ouvre le site dans Chrome : https://marckalenga117-max.github.io/kaltech/';
+    else $('#msg').textContent='Connexion impossible : '+(c||(e&&e.name)||'erreur')+' — '+String((e&&e.message)||e).slice(0,200);
   }
 };
 $('#logout').onclick=async()=>{
