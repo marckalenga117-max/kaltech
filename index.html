@@ -212,6 +212,9 @@ async function importBible(text){
 
 
 /* ===== Compte Google + synchronisation (Firebase) ===== */
+const showErr=(t)=>{const m=document.getElementById('msg');if(m)m.textContent=t};
+window.addEventListener('error',ev=>showErr('Erreur : '+ev.message+' ['+String(ev.filename||'').split('/').slice(-1)[0]+':'+ev.lineno+':'+ev.colno+']'));
+window.addEventListener('unhandledrejection',ev=>{const r=ev.reason;showErr('Erreur async : '+((r&&r.message)||r)+' | '+String((r&&r.stack)||'').split('\n').slice(1,3).join(' | ').slice(0,260))});
 const FBCFG={apiKey:"AIzaSyAtBesLonI0BxPyMjXzMIsoAhIhu0Bi8Jo",authDomain:"kaltech-carnet.firebaseapp.com",projectId:"kaltech-carnet",storageBucket:"kaltech-carnet.firebasestorage.app",messagingSenderId:"878041068814",appId:"1:878041068814:web:67b2676aa3757468d4d35f"};
 const FBV='https://www.gstatic.com/firebasejs/10.14.1/';
 let auth=null,db=null,user=null,unsub=null;const timers={};
@@ -231,7 +234,7 @@ function push(n){
 }
 function startSync(){
   let first=true;
-  unsub=col().onSnapshot(snap=>{
+  unsub=col().onSnapshot(snap=>{try{
     let changed=false;
     snap.docChanges().forEach(ch=>{
       const r=ch.doc.data(),id=ch.doc.id,l=notes.find(x=>x.id===id);
@@ -245,12 +248,14 @@ function startSync(){
     }
     if(changed){persist();renderList()}
     setSync('☁️ Synchronisé avec '+user.email);
-  },err=>setSync(err.code==='permission-denied'?'⚠️ Règles Firestore non publiées':'⚠️ Synchronisation en attente'));
+  }catch(err){showErr('Synchro (lecture) : '+err.message+' | '+String(err.stack||'').split('\n').slice(1,3).join(' | ').slice(0,260))}},err=>setSync(err.code==='permission-denied'?'⚠️ Règles Firestore non publiées':'⚠️ Synchronisation en attente'));
 }
 function onUser(u){
-  if(unsub){unsub();unsub=null}
-  user=u;ui();
-  if(u)startSync();
+  try{
+    if(unsub){unsub();unsub=null}
+    user=u;ui();
+    if(u)startSync();
+  }catch(err){showErr('Synchro : '+err.message+' | '+String(err.stack||'').split('\n').slice(1,3).join(' | ').slice(0,260))}
 }
 async function initCloud(){
   try{
@@ -275,7 +280,7 @@ $('#login').onclick=async()=>{
     else if(c==='auth/operation-not-allowed')$('#msg').textContent='La connexion Google n’est pas activée dans Firebase.';
     else if(c==='auth/popup-blocked')$('#msg').textContent='La fenêtre a été bloquée. Autorise les fenêtres surgissantes, ou ouvre le site dans Chrome.';
     else if(c==='auth/popup-closed-by-user'||c==='auth/cancelled-popup-request')$('#msg').textContent='Connexion annulée. Si la fenêtre se ferme toute seule, ouvre le site dans Chrome : https://marckalenga117-max.github.io/kaltech/';
-    else $('#msg').textContent='Connexion impossible : '+(c||(e&&e.name)||'erreur')+' — '+String((e&&e.message)||e).slice(0,200);
+    else $('#msg').textContent='Connexion impossible : '+(c||(e&&e.name)||'erreur')+' — '+String((e&&e.message)||e).slice(0,160)+' | '+String((e&&e.stack)||'').split('\n').slice(1,4).join(' | ').replace(/https?:\/\/[^ )]+\//g,'').slice(0,320);
   }
 };
 $('#logout').onclick=async()=>{
