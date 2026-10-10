@@ -124,14 +124,14 @@ function renderList(){
     d.innerHTML='<b></b><small></small>';
     d.firstChild.textContent=n.t||'Sans titre';
     d.lastChild.textContent=new Date(n.u).toLocaleDateString('fr-FR')+' · '+(n.c.slice(0,60).replace(/\n/g,' '));
-    d.onclick=()=>open(n.id);$('#items').appendChild(d)});
+    d.onclick=()=>openNote(n.id);$('#items').appendChild(d)});
 }
-function open(id){cur=notes.find(n=>n.id===id);$('#t').value=cur.t;$('#c').value=cur.c;$('#list').classList.add('hide');$('#editor').classList.remove('hide')}
-function close(){cur=null;$('#editor').classList.add('hide');$('#list').classList.remove('hide');renderList()}
+function openNote(id){cur=notes.find(n=>n.id===id);$('#t').value=cur.t;$('#c').value=cur.c;$('#list').classList.add('hide');$('#editor').classList.remove('hide')}
+function closeNote(){cur=null;$('#editor').classList.add('hide');$('#list').classList.remove('hide');renderList()}
 function newNote(t='',c=''){const n={id:Date.now().toString(36),t,c,u:Date.now()};notes.push(n);persist();push(n);return n}
-$('#new').onclick=()=>open(newNote().id);
-$('#back').onclick=close;
-$('#del').onclick=()=>{if(cur&&confirm('Supprimer cette note ?')){cur.d=1;cur.u=Date.now();persist();push(cur);close()}};
+$('#new').onclick=()=>openNote(newNote().id);
+$('#back').onclick=closeNote;
+$('#del').onclick=()=>{if(cur&&confirm('Supprimer cette note ?')){cur.d=1;cur.u=Date.now();persist();push(cur);closeNote()}};
 function save(){if(!cur)return;cur.t=$('#t').value;cur.c=$('#c').value;cur.u=Date.now();persist();push(cur);$('#saved').textContent='✓ Enregistré'}
 $('#t').oninput=$('#c').oninput=save;
 $('#q').oninput=renderList;
@@ -240,7 +240,7 @@ function startSync(){
       const r=ch.doc.data(),id=ch.doc.id,l=notes.find(x=>x.id===id);
       if(!l){notes.push({id,t:r.t||'',c:r.c||'',u:r.u||0,d:r.d?1:undefined});changed=true}
       else if((r.u||0)>l.u){l.t=r.t||'';l.c=r.c||'';l.u=r.u;l.d=r.d?1:undefined;changed=true;
-        if(cur===l){if(l.d)close();else{$('#t').value=l.t;$('#c').value=l.c}}}
+        if(cur===l){if(l.d)closeNote();else{$('#t').value=l.t;$('#c').value=l.c}}}
     });
     if(first){first=false;
       const remote={};snap.docs.forEach(d=>remote[d.id]=d.data());
