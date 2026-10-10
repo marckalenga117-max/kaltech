@@ -51,6 +51,7 @@ header img{display:block;width:100%;height:auto;max-height:24vh;object-fit:conta
   <div id="list">
     <h1>📝 Mes notes</h1>
     <div class="row"><input id="q" placeholder="Rechercher…"><button class="btn" id="new" style="flex:0 0 auto">+ Nouvelle</button></div>
+    <p class="mut" id="sync"></p>
     <div id="items"></div>
   </div>
   <div id="editor" class="hide">
@@ -73,6 +74,8 @@ header img{display:block;width:100%;height:auto;max-height:24vh;object-fit:conta
 
 <section id="s-save">
   <h1>☁️ Sauvegarde</h1>
+  <div class="item"><b>☁️ Compte Google</b><small id="acctInfo">Connecte-toi pour synchroniser tes notes sur tous tes appareils.</small>
+    <div class="row"><button class="btn" id="login">Se connecter avec Google</button><button class="btn alt hide" id="logout">Se déconnecter</button></div></div>
   <div class="item"><b>Sauvegarder mes notes</b><small>Télécharge un fichier à ranger dans Google Drive.</small>
     <div class="row"><button class="btn" id="exp">Exporter</button><button class="btn alt" id="imp">Restaurer</button></div>
     <input type="file" id="f1" accept=".json" class="hide"></div>
@@ -115,7 +118,7 @@ document.querySelectorAll('nav button').forEach(b=>b.onclick=()=>{
 /* Notes */
 function renderList(){
   const q=$('#q').value.toLowerCase();
-  const l=notes.filter(n=>(n.t+n.c).toLowerCase().includes(q)).sort((a,b)=>b.u-a.u);
+  const l=notes.filter(n=>!n.d&&(n.t+n.c).toLowerCase().includes(q)).sort((a,b)=>b.u-a.u);
   $('#items').innerHTML=l.length?'':'<p class="mut">Aucune note. Appuie sur « + Nouvelle ».</p>';
   l.forEach(n=>{const d=document.createElement('div');d.className='item';
     d.innerHTML='<b></b><small></small>';
@@ -125,11 +128,11 @@ function renderList(){
 }
 function open(id){cur=notes.find(n=>n.id===id);$('#t').value=cur.t;$('#c').value=cur.c;$('#list').classList.add('hide');$('#editor').classList.remove('hide')}
 function close(){cur=null;$('#editor').classList.add('hide');$('#list').classList.remove('hide');renderList()}
-function newNote(t='',c=''){const n={id:Date.now().toString(36),t,c,u:Date.now()};notes.push(n);persist();return n}
+function newNote(t='',c=''){const n={id:Date.now().toString(36),t,c,u:Date.now()};notes.push(n);persist();push(n);return n}
 $('#new').onclick=()=>open(newNote().id);
 $('#back').onclick=close;
-$('#del').onclick=()=>{if(cur&&confirm('Supprimer cette note ?')){notes=notes.filter(n=>n!==cur);persist();close()}};
-function save(){if(!cur)return;cur.t=$('#t').value;cur.c=$('#c').value;cur.u=Date.now();persist();$('#saved').textContent='✓ Enregistré'}
+$('#del').onclick=()=>{if(cur&&confirm('Supprimer cette note ?')){cur.d=1;cur.u=Date.now();persist();push(cur);close()}};
+function save(){if(!cur)return;cur.t=$('#t').value;cur.c=$('#c').value;cur.u=Date.now();persist();push(cur);$('#saved').textContent='✓ Enregistré'}
 $('#t').oninput=$('#c').oninput=save;
 $('#q').oninput=renderList;
 
@@ -161,14 +164,14 @@ $('#tonote').onclick=()=>{
   const txt=idx.map(i=>`${i+1}. ${vs[i]}`).join('\n');
   const ref=`${b.name} ${ch}:${idx.map(i=>i+1).join(',')}`;
   const block=`« ${txt} »\n— ${ref} (LSG 1910)\n\n`;
-  if(cur){cur.c+=(cur.c?'\n\n':'')+block;cur.u=Date.now();persist();alert('Ajouté à la note ouverte')}
+  if(cur){cur.c+=(cur.c?'\n\n':'')+block;cur.u=Date.now();persist();push(cur);alert('Ajouté à la note ouverte')}
   else{newNote(ref,block);alert('Nouvelle note créée : '+ref)}
   renderList();showV();
 };
 
 /* Sauvegarde */
 $('#exp').onclick=async()=>{
-  const json=JSON.stringify({v:1,notes},null,1);
+  const json=JSON.stringify({v:1,notes:notes.filter(n=>!n.d)},null,1);
   const file=new File([json],'sauvegarde-notes.json',{type:'application/json'});
   try{
     if(navigator.canShare&&navigator.canShare({files:[file]})){await navigator.share({files:[file],title:'Sauvegarde Miedird'});$('#msg').textContent='Sauvegarde partagée ✓ (choisis Drive).';return}
@@ -180,7 +183,7 @@ $('#imp').onclick=()=>$('#f1').click();
 $('#f1').onchange=async e=>{
   try{const d=JSON.parse(await e.target.files[0].text());
     const ids=new Set(notes.map(n=>n.id));
-    d.notes.forEach(n=>{if(!ids.has(n.id))notes.push(n)});
+    d.notes.forEach(n=>{if(!ids.has(n.id)){notes.push(n);push(n)}});
     persist();renderList();$('#msg').textContent='Notes restaurées ✓'}
   catch(x){$('#msg').textContent='Fichier invalide.'}
 };
@@ -207,7 +210,81 @@ async function importBible(text){
   }catch(x){$('#msg').textContent='Format non reconnu ou fichier incomplet.'}
 }
 
+
+/* ===== Compte Google + synchronisation (Firebase) ===== */
+const FBCFG={apiKey:"AIzaSyAtBesLonI0BxPyMjXzMIsoAhIhu0Bi8Jo",authDomain:"kaltech-carnet.firebaseapp.com",projectId:"kaltech-carnet",storageBucket:"kaltech-carnet.firebasestorage.app",messagingSenderId:"878041068814",appId:"1:878041068814:web:67b2676aa3757468d4d35f"};
+const FBV='https://www.gstatic.com/firebasejs/10.14.1/';
+let auth=null,db=null,user=null,unsub=null;const timers={};
+const setSync=t=>{const e=$('#sync');if(e)e.textContent=t};
+const loadScript=src=>new Promise((res,rej)=>{const s=document.createElement('script');s.src=src;s.onload=res;s.onerror=rej;document.head.appendChild(s)});
+const col=()=>db.collection('users').doc(user.uid).collection('notes');
+const payload=n=>({t:n.t||'',c:n.c||'',u:n.u||0,d:n.d?1:0});
+function ui(){
+  $('#login').classList.toggle('hide',!!user);$('#logout').classList.toggle('hide',!user);
+  $('#acctInfo').textContent=user?('Connecté : '+user.email+'. Tes notes se synchronisent automatiquement.'):'Connecte-toi pour synchroniser tes notes sur tous tes appareils.';
+  setSync(user?'☁️ Synchronisation en cours…':'');
+}
+function push(n){
+  if(!user||!db)return;
+  clearTimeout(timers[n.id]);
+  timers[n.id]=setTimeout(()=>{col().doc(n.id).set(payload(n)).then(()=>setSync('☁️ Synchronisé avec '+user.email)).catch(()=>setSync('⚠️ Synchronisation en attente'))},700);
+}
+function startSync(){
+  let first=true;
+  unsub=col().onSnapshot(snap=>{
+    let changed=false;
+    snap.docChanges().forEach(ch=>{
+      const r=ch.doc.data(),id=ch.doc.id,l=notes.find(x=>x.id===id);
+      if(!l){notes.push({id,t:r.t||'',c:r.c||'',u:r.u||0,d:r.d?1:undefined});changed=true}
+      else if((r.u||0)>l.u){l.t=r.t||'';l.c=r.c||'';l.u=r.u;l.d=r.d?1:undefined;changed=true;
+        if(cur===l){if(l.d)close();else{$('#t').value=l.t;$('#c').value=l.c}}}
+    });
+    if(first){first=false;
+      const remote={};snap.docs.forEach(d=>remote[d.id]=d.data());
+      notes.forEach(n=>{if(!remote[n.id]||n.u>(remote[n.id].u||0))push(n)});
+    }
+    if(changed){persist();renderList()}
+    setSync('☁️ Synchronisé avec '+user.email);
+  },err=>setSync(err.code==='permission-denied'?'⚠️ Règles Firestore non publiées':'⚠️ Synchronisation en attente'));
+}
+function onUser(u){
+  if(unsub){unsub();unsub=null}
+  user=u;ui();
+  if(u)startSync();
+}
+async function initCloud(){
+  try{
+    await loadScript(FBV+'firebase-app-compat.js');
+    await Promise.all([loadScript(FBV+'firebase-auth-compat.js'),loadScript(FBV+'firebase-firestore-compat.js')]);
+    firebase.initializeApp(FBCFG);auth=firebase.auth();db=firebase.firestore();
+    auth.getRedirectResult().catch(()=>{});
+    auth.onAuthStateChanged(onUser);
+  }catch(e){setSync('Mode local : pas de connexion internet.')}
+}
+$('#login').onclick=async()=>{
+  if(!auth){$('#msg').textContent='Connexion internet requise pour se connecter.';return}
+  const p=new firebase.auth.GoogleAuthProvider();
+  try{await auth.signInWithPopup(p)}
+  catch(e){
+    if(e.code==='auth/popup-blocked'||e.code==='auth/operation-not-supported-in-this-environment'){try{await auth.signInWithRedirect(p)}catch(x){}}
+    else if(e.code==='auth/unauthorized-domain')$('#msg').textContent='Domaine non autorisé : ajoute marckalenga117-max.github.io dans Firebase (Authentication, Paramètres).';
+    else if(e.code==='auth/operation-not-allowed')$('#msg').textContent='La connexion Google n’est pas activée dans Firebase.';
+    else if(e.code!=='auth/popup-closed-by-user'&&e.code!=='auth/cancelled-popup-request')$('#msg').textContent='Connexion impossible ('+(e.code||'erreur')+').';
+  }
+};
+$('#logout').onclick=async()=>{
+  if(!confirm('Te déconnecter ? Tes notes restent dans le cloud et seront retirées de cet appareil.'))return;
+  try{
+    const jobs=[];for(let i=0;i<notes.length;i+=400){const b=db.batch();notes.slice(i,i+400).forEach(n=>b.set(col().doc(n.id),payload(n)));jobs.push(b.commit())}
+    await Promise.race([Promise.all(jobs),new Promise((_,rj)=>setTimeout(rj,7000))]);
+  }catch(e){if(!confirm('La dernière synchronisation a échoué (hors connexion ?). Les notes non synchronisées seront perdues. Continuer ?'))return}
+  if(unsub){unsub();unsub=null}
+  notes=[];persist();renderList();$('#msg').textContent='';
+  try{await auth.signOut()}catch(e){}
+};
+
 fillBooks();renderList();
+initCloud();
 setTimeout(()=>{const s=document.getElementById("splash");if(s){s.classList.add("out");setTimeout(()=>s.remove(),700)}},1800);
 </script>
 <script>if('serviceWorker' in navigator){window.addEventListener('load',()=>navigator.serviceWorker.register('sw.js').catch(()=>{}))}</script>
